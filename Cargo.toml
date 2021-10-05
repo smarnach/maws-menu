@@ -1,0 +1,16 @@
+[package]
+name = "maws-menu"
+version = "0.1.0"
+edition = "2018"
+authors = ["Sven Marnach <sven@mozilla.com>"]
+description = "Console account menu for the Mozilla AWS CLI"
+repository = "https://github.com/smarnach/maws-menu"
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0"
+dialoguer = "0.8"
+home = "0.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.5"
