@@ -10,8 +10,18 @@ use home::home_dir;
 use serde::{Deserialize, Serialize};
 
 fn main() -> Result<()> {
-    let config_dir = home_dir().unwrap().join(".config/maws");
-    let mut config = Config::new(config_dir.join("roles.json"), config_dir.join("menu.toml"))?;
+    let config_path = ".config/maws2";
+    let config_file = "roles.json";
+    let config_dir =  home_dir().unwrap().join(config_path);
+    let config_location = config_dir.join(config_file);
+    let local_path = Path::new(&config_location).clone();
+
+    if !local_path.exists() {
+        eprintln!("Configuration file at {} does not exist, please see README.md \n https://github.com/smarnach/maws-menu", local_path.display());
+        std::process::exit(1);
+    }
+
+    let mut config = Config::new(local_path, config_dir.join("menu.toml"))?;
     let account = config.select_account()?;
     let role = config.select_role(&account)?;
     config.write_defaults()?;
