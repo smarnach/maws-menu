@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use dialoguer::{theme::ColorfulTheme, Select};
 use home::home_dir;
 use serde::{Deserialize, Serialize};
@@ -30,7 +30,11 @@ struct Config {
 
 impl Config {
     fn new(roles_path: impl AsRef<Path>, defaults_path: impl Into<PathBuf>) -> Result<Config> {
-        let accounts = serde_json::from_reader(File::open(roles_path.as_ref())?)?;
+        let roles_file = File::open(&roles_path).with_context(|| format!(
+            "Configuration file at {} does not exist, please see README.md\nhttps://github.com/smarnach/maws-menu",
+            roles_path.as_ref().display(),
+        ))?;
+        let accounts = serde_json::from_reader(roles_file)?;
         let defaults_path = defaults_path.into();
         let defaults: Defaults =
             toml::from_slice(&std::fs::read(&defaults_path).unwrap_or_default())?;
