@@ -31,7 +31,7 @@ struct Config {
 impl Config {
     fn new(roles_path: impl AsRef<Path>, defaults_path: impl Into<PathBuf>) -> Result<Config> {
         let roles_file = File::open(&roles_path).with_context(|| format!(
-            "Configuration file at {} does not exist, please see README.md\nhttps://github.com/smarnach/maws-menu",
+            "Cannot open configuration file at {}, please see README.md\nhttps://github.com/smarnach/maws-menu",
             roles_path.as_ref().display(),
         ))?;
         let accounts = serde_json::from_reader(roles_file)?;
