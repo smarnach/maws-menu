@@ -5,9 +5,11 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use dialoguer::{theme::ColorfulTheme, Select};
 use home::home_dir;
 use serde::{Deserialize, Serialize};
+use termion::raw::IntoRawMode;
+
+mod menu;
 
 fn main() -> Result<()> {
     let config_dir = home_dir().unwrap().join(".config/maws");
@@ -87,8 +89,9 @@ fn select<T: Eq + ToString>(items: &[T], default: Option<T>) -> std::io::Result<
     let default_index = default
         .and_then(|x| items.iter().position(|y| &x == y))
         .unwrap_or_default();
-    Select::with_theme(&ColorfulTheme::default())
-        .items(items)
+    let stdin = std::io::stdin();
+    let stdout = std::io::stderr().into_raw_mode()?;
+    menu::Menu::new(items.iter().map(ToString::to_string).collect())
         .default(default_index)
-        .interact()
+        .interact(stdin, stdout)
 }
