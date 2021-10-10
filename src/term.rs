@@ -1,6 +1,33 @@
-use std::io::{Read, Write};
+use std::io::{Stderr, Stdin, Stdout, Write};
 
-use termion::{clear, color, cursor, event::Key, input::TermRead};
+use termion::{
+    clear, color, cursor,
+    event::Key,
+    input::TermRead,
+    raw::{IntoRawMode, RawTerminal},
+};
+
+#[derive(Debug)]
+pub struct Term<R, W> {
+    stdin: R,
+    stdout: W,
+}
+
+impl Term<Stdin, RawTerminal<Stdout>> {
+    pub fn stdout() -> std::io::Result<Self> {
+        let stdin = std::io::stdin();
+        let stdout = std::io::stdout().into_raw_mode()?;
+        Ok(Self { stdin, stdout })
+    }
+}
+
+impl Term<Stdin, RawTerminal<Stderr>> {
+    pub fn stderr() -> std::io::Result<Self> {
+        let stdin = std::io::stdin();
+        let stdout = std::io::stderr().into_raw_mode()?;
+        Ok(Self { stdin, stdout })
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Menu {
@@ -18,22 +45,19 @@ impl Menu {
         self
     }
 
-    pub fn interact<R, W>(&self, stdin: R, mut stdout: W) -> std::io::Result<usize>
-    where
-        R: Read,
-        W: Write,
-    {
-        write!(stdout, "{}", cursor::Hide)?;
+    pub fn interact(&self) -> std::io::Result<usize> {
+        let mut term = Term::stderr()?;
+        write!(term.stdout, "{}", cursor::Hide)?;
         let mut selected = self.default.min(self.items.len());
-        let mut keys = stdin.keys();
+        let mut keys = term.stdin.keys();
         loop {
-            self.draw(&mut stdout, selected)?;
+            self.draw(&mut term.stdout, selected)?;
             let key = match keys.next() {
                 Some(key) => key?,
                 None => break,
             };
             write!(
-                stdout,
+                term.stdout,
                 "{}{}",
                 cursor::Up(self.items.len() as _),
                 clear::AfterCursor
@@ -45,7 +69,7 @@ impl Menu {
                 _ => {}
             }
         }
-        write!(stdout, "{}", cursor::Show)?;
+        write!(term.stdout, "{}", cursor::Show)?;
         Ok(selected)
     }
 

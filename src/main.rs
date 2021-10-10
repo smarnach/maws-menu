@@ -7,9 +7,8 @@ use std::{
 use anyhow::{Context, Result};
 use home::home_dir;
 use serde::{Deserialize, Serialize};
-use termion::raw::IntoRawMode;
 
-mod menu;
+pub mod term;
 
 fn main() -> Result<()> {
     let config_dir = home_dir().unwrap().join(".config/maws");
@@ -89,9 +88,7 @@ fn select<T: Eq + ToString>(items: &[T], default: Option<T>) -> std::io::Result<
     let default_index = default
         .and_then(|x| items.iter().position(|y| &x == y))
         .unwrap_or_default();
-    let stdin = std::io::stdin();
-    let stdout = std::io::stderr().into_raw_mode()?;
-    menu::Menu::new(items.iter().map(ToString::to_string).collect())
+    term::Menu::new(items.iter().map(ToString::to_string).collect())
         .default(default_index)
-        .interact(stdin, stdout)
+        .interact()
 }
