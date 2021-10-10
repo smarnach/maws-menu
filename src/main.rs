@@ -1,4 +1,5 @@
 use std::{
+    cell::RefCell,
     collections::BTreeMap,
     fs::File,
     path::{Path, PathBuf},
@@ -12,10 +13,10 @@ pub mod term;
 
 fn main() -> Result<()> {
     let config_dir = home_dir().unwrap().join(".config/maws");
-    let mut config = Config::new(config_dir.join("roles.json"), config_dir.join("menu.toml"))?;
+    let config = Config::new(config_dir.join("roles.json"), config_dir.join("menu.toml"))?;
     let account = config.select_account()?;
-    let role = config.select_role(&account)?;
-    config.write_defaults()?;
+    let role = config.select_role(account)?;
+    config.write_history()?;
 
     let mut child = std::process::Command::new("maws")
         .args(["-b", "-r", &role.arn])
@@ -25,48 +26,50 @@ fn main() -> Result<()> {
 
 struct Config {
     accounts: AccountsMap,
-    defaults: Defaults,
-    defaults_path: PathBuf,
+    history: RefCell<History>,
+    history_path: PathBuf,
 }
 
 impl Config {
-    fn new(roles_path: impl AsRef<Path>, defaults_path: impl Into<PathBuf>) -> Result<Config> {
+    fn new(roles_path: impl AsRef<Path>, history_path: impl Into<PathBuf>) -> Result<Config> {
         let roles_file = File::open(&roles_path).with_context(|| format!(
             "Cannot open configuration file at {}, please see README.md\nhttps://github.com/smarnach/maws-menu",
             roles_path.as_ref().display(),
         ))?;
-        let accounts = serde_json::from_reader(roles_file)?;
-        let defaults_path = defaults_path.into();
-        let defaults: Defaults =
-            toml::from_slice(&std::fs::read(&defaults_path).unwrap_or_default())?;
+        let history_path = history_path.into();
+        let history: History = toml::from_slice(&std::fs::read(&history_path).unwrap_or_default())?;
         Ok(Self {
-            accounts,
-            defaults,
-            defaults_path,
+            accounts: serde_json::from_reader(roles_file)?,
+            history: RefCell::new(history),
+            history_path,
         })
     }
 
-    fn select_account(&mut self) -> Result<String> {
+    fn select_account(&self) -> Result<&String> {
         let account_names = self.accounts.keys().map(|x| (x.to_owned(), None)).collect();
-        let selected = select(account_names, self.defaults.account.as_ref())?;
+        let selected = select(account_names, self.history.borrow().account.as_ref())?;
         let account = self.accounts.keys().nth(selected).unwrap();
-        self.defaults.account = Some(account.clone());
-        Ok(account.clone())
+        self.history.borrow_mut().account = Some(account.clone());
+        Ok(account)
     }
 
-    fn select_role(&mut self, account: &str) -> Result<Role> {
+    fn select_role(&self, account: &str) -> Result<&Role> {
         let account_roles = self.accounts.get(account).unwrap();
-        let role_names: Vec<_> = account_roles.iter().map(|r| (r.role.to_owned(), None)).collect();
-        let role = &account_roles[select(role_names, self.defaults.roles.get(account))?];
-        self.defaults
+        let role_names: Vec<_> = account_roles
+            .iter()
+            .map(|r| (r.role.to_owned(), None))
+            .collect();
+        let role = &account_roles[select(role_names, self.history.borrow().roles.get(account))?];
+        self.history
+            .borrow_mut()
             .roles
             .insert(account.to_owned(), role.role.clone());
-        Ok(role.clone())
+        Ok(role)
     }
 
-    fn write_defaults(&self) -> Result<()> {
-        let defaults_toml = &toml::to_vec(&self.defaults)?;
-        Ok(std::fs::write(&self.defaults_path, defaults_toml)?)
+    fn write_history(&self) -> Result<()> {
+        let history_toml = &toml::to_vec(&self.history)?;
+        Ok(std::fs::write(&self.history_path, history_toml)?)
     }
 }
 
@@ -79,18 +82,15 @@ struct Role {
 type AccountsMap = BTreeMap<String, Vec<Role>>;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
-struct Defaults {
+struct History {
     account: Option<String>,
     #[serde(default)]
     roles: BTreeMap<String, String>,
 }
 
-fn select(items: Vec<(String, Option<char>)>, default: Option<&String>) -> std::io::Result<usize>
-{
+fn select(items: Vec<(String, Option<char>)>, default: Option<&String>) -> std::io::Result<usize> {
     let default_index = default
         .and_then(|x| items.iter().position(|y| x == &y.0))
         .unwrap_or_default();
-    term::Menu::new(items)
-        .default(default_index)
-        .interact()
+    term::Menu::new(items).default(default_index).interact()
 }
