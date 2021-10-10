@@ -30,13 +30,55 @@ impl Term<Stdin, RawTerminal<Stderr>> {
 }
 
 #[derive(Clone, Debug)]
+pub struct MenuItem {
+    label: String,
+    shortcut: Option<char>,
+}
+
+impl MenuItem {
+    fn new(label: impl Into<String>, shortcut: Option<char>) -> Self {
+        let label = label.into();
+        Self { label, shortcut }
+    }
+
+    fn draw<W: Write>(&self, mut stdout: W, selected: bool) -> std::io::Result<()> {
+        if selected {
+            write!(stdout, "{}❯ ", color::Fg(color::LightCyan))?;
+        } else {
+            write!(stdout, "  ")?;
+        }
+        if let Some(c) = self.shortcut {
+            write!(stdout, "[{}] ", c)?;
+        } else {
+            write!(stdout, "    ")?;
+        }
+        write!(stdout, "{}\r\n", self.label)?;
+        if selected {
+            write!(stdout, "{}", termion::style::Reset)?;
+        }
+        Ok(())
+    }
+}
+
+impl<T: Into<String>> From<(T, Option<char>)> for MenuItem {
+    fn from((label, shortcut): (T, Option<char>)) -> Self {
+        Self::new(label, shortcut)
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Menu {
-    items: Vec<String>,
+    items: Vec<MenuItem>,
     default: usize,
 }
 
 impl Menu {
-    pub fn new(items: Vec<String>) -> Self {
+    pub fn new<I>(items: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: Into<MenuItem>,
+    {
+        let items = items.into_iter().map(Into::into).collect();
         Self { items, default: 0 }
     }
 
@@ -50,22 +92,25 @@ impl Menu {
         write!(term.stdout, "{}", cursor::Hide)?;
         let mut selected = self.default.min(self.items.len());
         let mut keys = term.stdin.keys();
-        loop {
+        'outer: loop {
             self.draw(&mut term.stdout, selected)?;
             let key = match keys.next() {
                 Some(key) => key?,
                 None => break,
             };
-            write!(
-                term.stdout,
-                "{}{}",
-                cursor::Up(self.items.len() as _),
-                clear::AfterCursor
-            )?;
+            self.clear(&mut term.stdout)?;
             match key {
                 Key::Up => selected = selected.saturating_sub(1),
                 Key::Down => selected = (selected + 1).min(self.items.len() - 1),
                 Key::Char('\n') => break,
+                Key::Char(c) => {
+                    for (i, item) in self.items.iter().enumerate() {
+                        if item.shortcut == Some(c) {
+                            selected = i;
+                            break 'outer;
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -76,20 +121,19 @@ impl Menu {
     fn draw<W: Write>(&self, mut stdout: W, selected: usize) -> std::io::Result<()> {
         let mut output = vec![];
         for (i, item) in self.items.iter().enumerate() {
-            if i == selected {
-                writeln!(
-                    output,
-                    "{}❯ {}{}\r",
-                    color::Fg(color::LightCyan),
-                    item,
-                    termion::style::Reset
-                )?;
-            } else {
-                writeln!(output, "  {}\r", item)?;
-            }
+            item.draw(&mut output, i == selected)?;
         }
         stdout.write_all(&output)?;
         stdout.flush()?;
         Ok(())
+    }
+
+    fn clear<W: Write>(&self, mut stdout: W) -> std::io::Result<()> {
+        write!(
+            stdout,
+            "{}{}",
+            cursor::Up(self.items.len() as _),
+            clear::AfterCursor
+        )
     }
 }

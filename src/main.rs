@@ -47,16 +47,17 @@ impl Config {
     }
 
     fn select_account(&mut self) -> Result<String> {
-        let account_names: Vec<_> = self.accounts.keys().collect();
-        let account = account_names[select(&account_names, self.defaults.account.as_ref())?];
+        let account_names = self.accounts.keys().map(|x| (x.to_owned(), None)).collect();
+        let selected = select(account_names, self.defaults.account.as_ref())?;
+        let account = self.accounts.keys().nth(selected).unwrap();
         self.defaults.account = Some(account.clone());
         Ok(account.clone())
     }
 
     fn select_role(&mut self, account: &str) -> Result<Role> {
         let account_roles = self.accounts.get(account).unwrap();
-        let role_names: Vec<_> = account_roles.iter().map(|r| &r.role).collect();
-        let role = &account_roles[select(&role_names, self.defaults.roles.get(account))?];
+        let role_names: Vec<_> = account_roles.iter().map(|r| (r.role.to_owned(), None)).collect();
+        let role = &account_roles[select(role_names, self.defaults.roles.get(account))?];
         self.defaults
             .roles
             .insert(account.to_owned(), role.role.clone());
@@ -84,11 +85,12 @@ struct Defaults {
     roles: BTreeMap<String, String>,
 }
 
-fn select<T: Eq + ToString>(items: &[T], default: Option<T>) -> std::io::Result<usize> {
+fn select(items: Vec<(String, Option<char>)>, default: Option<&String>) -> std::io::Result<usize>
+{
     let default_index = default
-        .and_then(|x| items.iter().position(|y| &x == y))
+        .and_then(|x| items.iter().position(|y| x == &y.0))
         .unwrap_or_default();
-    term::Menu::new(items.iter().map(ToString::to_string).collect())
+    term::Menu::new(items)
         .default(default_index)
         .interact()
 }
