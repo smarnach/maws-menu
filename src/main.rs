@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     fs::File,
     path::{Path, PathBuf},
 };
@@ -37,7 +37,11 @@ impl Config {
             roles_path.as_ref().display(),
         ))?;
         let history_path = history_path.into();
-        let history: History = toml::from_slice(&std::fs::read(&history_path).unwrap_or_default())?;
+        let mut history: History =
+            toml::from_slice(&std::fs::read(&history_path).unwrap_or_default())?;
+        if let Some(account) = history.account.take() {
+            history.last_accounts.push(account);
+        }
         Ok(Self {
             accounts: serde_json::from_reader(roles_file)?,
             history: RefCell::new(history),
@@ -46,10 +50,28 @@ impl Config {
     }
 
     fn select_account(&self) -> Result<&String> {
-        let account_names = self.accounts.keys().map(|x| (x.to_owned(), None)).collect();
-        let selected = select(account_names, self.history.borrow().account.as_ref())?;
+        let account_names = self
+            .accounts
+            .keys()
+            .map(|x| {
+                (
+                    x.to_owned(),
+                    self.history
+                        .borrow()
+                        .last_accounts
+                        .iter()
+                        .position(|y| x == y)
+                        .map(|i| char::from_digit(i as _, 10).unwrap()),
+                )
+            })
+            .collect();
+        let selected = select(account_names, self.history.borrow().last_accounts.first())?;
         let account = self.accounts.keys().nth(selected).unwrap();
-        self.history.borrow_mut().account = Some(account.clone());
+        let last_accounts = &mut self.history.borrow_mut().last_accounts;
+        last_accounts.insert(0, account.clone());
+        let mut seen = HashSet::new();
+        last_accounts.retain(|x| seen.insert(x.to_owned()));
+        last_accounts.truncate(5);
         Ok(account)
     }
 
@@ -82,9 +104,10 @@ struct Role {
 type AccountsMap = BTreeMap<String, Vec<Role>>;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(default)]
 struct History {
     account: Option<String>,
-    #[serde(default)]
+    last_accounts: Vec<String>,
     roles: BTreeMap<String, String>,
 }
 
