@@ -3,7 +3,7 @@ use std::{
     os::unix::io::AsRawFd,
 };
 
-use termion::{clear, color, cursor, event::Key, input::TermRead};
+use termion::{clear, color, cursor, event::Key, input::TermRead, style};
 
 #[derive(Debug)]
 pub struct Term<R, W>
@@ -19,19 +19,19 @@ impl<W> Term<Stdin, W>
 where
     W: AsRawFd + Write,
 {
-    pub fn new(mut stdout: W) -> std::io::Result<Self> {
+    pub fn new(stdout: W) -> std::io::Result<Self> {
         let stdin = std::io::stdin();
         let fd = stdout.as_raw_fd();
-        let termios = termios::Termios::from_fd(fd)?;
-        let mut raw_termios = termios;
-        termios::cfmakeraw(&mut raw_termios);
-        termios::tcsetattr(fd, termios::TCSADRAIN, &raw_termios)?;
-        write!(stdout, "{}", cursor::Hide)?;
-        Ok(Self {
+        let mut termios = termios::Termios::from_fd(fd)?;
+        let mut result = Self {
             stdin,
             stdout,
             termios,
-        })
+        };
+        termios::cfmakeraw(&mut termios);
+        termios::tcsetattr(fd, termios::TCSADRAIN, &termios)?;
+        write!(result.stdout, "{}", cursor::Hide)?;
+        Ok(result)
     }
 }
 
@@ -71,7 +71,7 @@ impl MenuItem {
 
     fn draw<W: Write>(&self, mut stdout: W, selected: bool) -> std::io::Result<()> {
         if selected {
-            write!(stdout, "{}❯ ", color::Fg(color::LightCyan))?;
+            write!(stdout, "{}{}❯ ", color::Fg(color::LightCyan), style::Bold)?;
         } else {
             write!(stdout, "  ")?;
         }
@@ -82,7 +82,7 @@ impl MenuItem {
         }
         write!(stdout, "{}\r\n", self.label)?;
         if selected {
-            write!(stdout, "{}", termion::style::Reset)?;
+            write!(stdout, "{}", style::Reset)?;
         }
         Ok(())
     }
@@ -131,8 +131,8 @@ impl Menu {
                 Key::Down => selected = (selected + 1).min(self.items.len() - 1),
                 Key::Char('\n') => break,
                 Key::Char(c) => {
-                    for (i, item) in self.items.iter().enumerate() {
-                        if item.shortcut == Some(c) {
+                    for i in 0..self.items.len() {
+                        if self.items[i].shortcut == Some(c) {
                             selected = i;
                             break 'outer;
                         }
@@ -146,8 +146,8 @@ impl Menu {
 
     fn draw<W: Write>(&self, mut stdout: W, selected: usize) -> std::io::Result<()> {
         let mut output = vec![];
-        for (i, item) in self.items.iter().enumerate() {
-            item.draw(&mut output, i == selected)?;
+        for i in 0..self.items.len() {
+            self.items[i].draw(&mut output, i == selected)?;
         }
         stdout.write_all(&output)?;
         stdout.flush()?;
