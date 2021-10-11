@@ -115,33 +115,35 @@ impl Menu {
         self
     }
 
-    pub fn interact(&self) -> std::io::Result<usize> {
+    pub fn interact(&self) -> std::io::Result<Option<usize>> {
         let mut term = Term::stderr()?;
         let mut selected = self.default.min(self.items.len());
         let mut keys = (&mut term.stdin).keys();
-        'outer: loop {
+        loop {
             self.draw(&mut term.stdout, selected)?;
             let key = match keys.next() {
                 Some(key) => key?,
-                None => break,
+                None => return Ok(None),
             };
             self.clear(&mut term.stdout)?;
             match key {
                 Key::Up => selected = selected.saturating_sub(1),
                 Key::Down => selected = (selected + 1).min(self.items.len() - 1),
-                Key::Char('\n') => break,
+                Key::Home => selected = 0,
+                Key::End => selected = self.items.len() - 1,
+                Key::Esc | Key::Char('q') => return Ok(None),
+                Key::Char('\n') => return Ok(Some(selected)),
                 Key::Char(c) => {
                     for i in 0..self.items.len() {
                         if self.items[i].shortcut == Some(c) {
                             selected = i;
-                            break 'outer;
+                            return Ok(Some(selected));
                         }
                     }
                 }
                 _ => {}
             }
         }
-        Ok(selected)
     }
 
     fn draw<W: Write>(&self, mut stdout: W, selected: usize) -> std::io::Result<()> {

@@ -67,6 +67,7 @@ impl Config {
             .collect();
         let selected = select(account_names, self.history.borrow().last_accounts.first())?;
         let account = self.accounts.keys().nth(selected).unwrap();
+        eprintln!("Account: {}", account);
         let last_accounts = &mut self.history.borrow_mut().last_accounts;
         last_accounts.insert(0, account.clone());
         let mut seen = HashSet::new();
@@ -82,6 +83,7 @@ impl Config {
             .map(|r| (r.role.to_owned(), None))
             .collect();
         let role = &account_roles[select(role_names, self.history.borrow().roles.get(account))?];
+        eprintln!("Role: {}", role.role);
         self.history
             .borrow_mut()
             .roles
@@ -115,5 +117,8 @@ fn select(items: Vec<(String, Option<char>)>, default: Option<&String>) -> std::
     let default_index = default
         .and_then(|x| items.iter().position(|y| x == &y.0))
         .unwrap_or_default();
-    term::Menu::new(items).default(default_index).interact()
+    match term::Menu::new(items).default(default_index).interact()? {
+        Some(selected) => Ok(selected),
+        None => std::process::exit(-1),
+    }
 }
