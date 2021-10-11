@@ -6,20 +6,27 @@ use std::{
 use termion::{clear, color, cursor, event::Key, input::TermRead};
 
 #[derive(Debug)]
-pub struct Term<R, W: AsRawFd> {
+pub struct Term<R, W>
+where
+    W: AsRawFd + Write,
+{
     stdin: R,
     stdout: W,
     termios: termios::Termios,
 }
 
-impl<W: AsRawFd> Term<Stdin, W> {
-    pub fn new(stdout: W) -> std::io::Result<Self> {
+impl<W> Term<Stdin, W>
+where
+    W: AsRawFd + Write,
+{
+    pub fn new(mut stdout: W) -> std::io::Result<Self> {
         let stdin = std::io::stdin();
         let fd = stdout.as_raw_fd();
         let termios = termios::Termios::from_fd(fd)?;
         let mut raw_termios = termios;
         termios::cfmakeraw(&mut raw_termios);
         termios::tcsetattr(fd, termios::TCSADRAIN, &raw_termios)?;
+        write!(stdout, "{}", cursor::Hide)?;
         Ok(Self {
             stdin,
             stdout,
@@ -42,9 +49,10 @@ impl Term<Stdin, Stderr> {
 
 impl<R, W> Drop for Term<R, W>
 where
-    W: AsRawFd,
+    W: AsRawFd + Write,
 {
     fn drop(&mut self) {
+        let _ = write!(self.stdout, "{}", cursor::Show);
         let _ = termios::tcsetattr(self.stdout.as_raw_fd(), termios::TCSANOW, &self.termios);
     }
 }
@@ -109,7 +117,6 @@ impl Menu {
 
     pub fn interact(&self) -> std::io::Result<usize> {
         let mut term = Term::stderr()?;
-        write!(term.stdout, "{}", cursor::Hide)?;
         let mut selected = self.default.min(self.items.len());
         let mut keys = (&mut term.stdin).keys();
         'outer: loop {
@@ -134,7 +141,6 @@ impl Menu {
                 _ => {}
             }
         }
-        write!(term.stdout, "{}", cursor::Show)?;
         Ok(selected)
     }
 
