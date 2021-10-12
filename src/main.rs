@@ -36,6 +36,7 @@ struct Config {
 #[derive(Clone, Debug, Deserialize)]
 struct Role {
     arn: String,
+    id: String,
     role: String,
 }
 
@@ -56,10 +57,14 @@ impl Config {
     fn select_account(&self) -> Result<&String> {
         let menu_items = self
             .accounts
-            .keys()
-            .map(|account| {
+            .iter()
+            .map(|(account, roles)| {
                 (
-                    account.to_owned(),
+                    format!(
+                        "{:32} {}",
+                        account,
+                        roles.first().map(|r| r.id.as_str()).unwrap_or_default(),
+                    ),
                     self.history
                         .account_index(account)
                         .map(|i| char::from_digit(i as _, 10).unwrap()),
