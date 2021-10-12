@@ -1,3 +1,5 @@
+#![deny(clippy::all)]
+
 use std::{
     collections::BTreeMap,
     fs::File,
@@ -5,16 +7,20 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use dialoguer::{theme::ColorfulTheme, Select};
 use home::home_dir;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+
+mod history;
+pub mod term;
+
+use history::History;
 
 fn main() -> Result<()> {
     let config_dir = home_dir().unwrap().join(".config/maws");
-    let mut config = Config::new(config_dir.join("roles.json"), config_dir.join("menu.toml"))?;
+    let config = Config::new(config_dir.join("roles.json"), config_dir.join("menu.toml"))?;
     let account = config.select_account()?;
-    let role = config.select_role(&account)?;
-    config.write_defaults()?;
+    let role = config.select_role(account)?;
+    config.history.write()?;
 
     let mut child = std::process::Command::new("maws")
         .args(["-b", "-r", &role.arn])
@@ -24,48 +30,7 @@ fn main() -> Result<()> {
 
 struct Config {
     accounts: AccountsMap,
-    defaults: Defaults,
-    defaults_path: PathBuf,
-}
-
-impl Config {
-    fn new(roles_path: impl AsRef<Path>, defaults_path: impl Into<PathBuf>) -> Result<Config> {
-        let roles_file = File::open(&roles_path).with_context(|| format!(
-            "Cannot open configuration file at {}, please see README.md\nhttps://github.com/smarnach/maws-menu",
-            roles_path.as_ref().display(),
-        ))?;
-        let accounts = serde_json::from_reader(roles_file)?;
-        let defaults_path = defaults_path.into();
-        let defaults: Defaults =
-            toml::from_slice(&std::fs::read(&defaults_path).unwrap_or_default())?;
-        Ok(Self {
-            accounts,
-            defaults,
-            defaults_path,
-        })
-    }
-
-    fn select_account(&mut self) -> Result<String> {
-        let account_names: Vec<_> = self.accounts.keys().collect();
-        let account = account_names[select(&account_names, self.defaults.account.as_ref())?];
-        self.defaults.account = Some(account.clone());
-        Ok(account.clone())
-    }
-
-    fn select_role(&mut self, account: &str) -> Result<Role> {
-        let account_roles = self.accounts.get(account).unwrap();
-        let role_names: Vec<_> = account_roles.iter().map(|r| &r.role).collect();
-        let role = &account_roles[select(&role_names, self.defaults.roles.get(account))?];
-        self.defaults
-            .roles
-            .insert(account.to_owned(), role.role.clone());
-        Ok(role.clone())
-    }
-
-    fn write_defaults(&self) -> Result<()> {
-        let defaults_toml = &toml::to_vec(&self.defaults)?;
-        Ok(std::fs::write(&self.defaults_path, defaults_toml)?)
-    }
+    history: History,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -76,19 +41,57 @@ struct Role {
 
 type AccountsMap = BTreeMap<String, Vec<Role>>;
 
-#[derive(Debug, Default, Deserialize, Serialize)]
-struct Defaults {
-    account: Option<String>,
-    #[serde(default)]
-    roles: BTreeMap<String, String>,
+impl Config {
+    fn new(roles_path: impl AsRef<Path>, history_path: impl Into<PathBuf>) -> Result<Config> {
+        let roles_file = File::open(&roles_path).with_context(|| format!(
+            "Cannot open configuration file at {}, please see README.md\nhttps://github.com/smarnach/maws-menu",
+            roles_path.as_ref().display(),
+        ))?;
+        Ok(Self {
+            accounts: serde_json::from_reader(roles_file)?,
+            history: History::new(history_path)?,
+        })
+    }
+
+    fn select_account(&self) -> Result<&String> {
+        let menu_items = self
+            .accounts
+            .keys()
+            .map(|account| {
+                (
+                    account.to_owned(),
+                    self.history
+                        .account_index(account)
+                        .map(|i| char::from_digit(i as _, 10).unwrap()),
+                )
+            })
+            .collect();
+        let selected = select(menu_items, self.history.default_account())?;
+        let account = self.accounts.keys().nth(selected).unwrap();
+        eprintln!("Account: {}", account);
+        self.history.use_account(account, 5);
+        Ok(account)
+    }
+
+    fn select_role(&self, account: &str) -> Result<&Role> {
+        let account_roles = self.accounts.get(account).unwrap();
+        let role_names: Vec<_> = account_roles
+            .iter()
+            .map(|r| (r.role.to_owned(), None))
+            .collect();
+        let role = &account_roles[select(role_names, self.history.default_role(account))?];
+        eprintln!("Role: {}", role.role);
+        self.history.use_role(account, &role.role);
+        Ok(role)
+    }
 }
 
-fn select<T: Eq + ToString>(items: &[T], default: Option<T>) -> std::io::Result<usize> {
+fn select(items: Vec<(String, Option<char>)>, default: Option<String>) -> std::io::Result<usize> {
     let default_index = default
-        .and_then(|x| items.iter().position(|y| &x == y))
+        .and_then(|x| items.iter().position(|y| x == y.0))
         .unwrap_or_default();
-    Select::with_theme(&ColorfulTheme::default())
-        .items(items)
-        .default(default_index)
-        .interact()
+    match term::Menu::new(items).default(default_index).interact()? {
+        Some(selected) => Ok(selected),
+        None => std::process::exit(-1),
+    }
 }
