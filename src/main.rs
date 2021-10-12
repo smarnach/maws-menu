@@ -71,7 +71,12 @@ impl Config {
                 )
             })
             .collect();
-        let selected = select(menu_items, self.history.default_account())?;
+        let default_index = self
+            .history
+            .default_account()
+            .and_then(|x| self.accounts.keys().position(|y| &x == y))
+            .unwrap_or_default();
+        let selected = select(menu_items, default_index)?;
         let account = self.accounts.keys().nth(selected).unwrap();
         eprintln!("Account: {}", account);
         self.history.use_account(account, 5);
@@ -80,21 +85,23 @@ impl Config {
 
     fn select_role(&self, account: &str) -> Result<&Role> {
         let account_roles = self.accounts.get(account).unwrap();
-        let role_names: Vec<_> = account_roles
+        let menu_items: Vec<_> = account_roles
             .iter()
             .map(|r| (r.role.to_owned(), None))
             .collect();
-        let role = &account_roles[select(role_names, self.history.default_role(account))?];
+        let default_index = self
+            .history
+            .default_role(account)
+            .and_then(|x| account_roles.iter().position(|y| x == y.role))
+            .unwrap_or_default();
+        let role = &account_roles[select(menu_items, default_index)?];
         eprintln!("Role: {}", role.role);
         self.history.use_role(account, &role.role);
         Ok(role)
     }
 }
 
-fn select(items: Vec<(String, Option<char>)>, default: Option<String>) -> std::io::Result<usize> {
-    let default_index = default
-        .and_then(|x| items.iter().position(|y| x == y.0))
-        .unwrap_or_default();
+fn select(items: Vec<(String, Option<char>)>, default_index: usize) -> std::io::Result<usize> {
     match term::Menu::new(items).default(default_index).interact()? {
         Some(selected) => Ok(selected),
         None => std::process::exit(-1),
