@@ -7,6 +7,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use clap::{app_from_crate, crate_authors, crate_description, crate_name, crate_version, Arg};
 use home::home_dir;
 use serde::Deserialize;
 
@@ -16,11 +17,43 @@ pub mod term;
 use history::History;
 
 fn main() -> Result<()> {
-    let config_dir = home_dir().unwrap().join(".config/maws");
-    let config = Config::new(config_dir.join("roles.json"), config_dir.join("menu.toml"))?;
-    let account = config.select_account()?;
-    let role = config.select_role(account)?;
-    config.history.write()?;
+    let matches = app_from_crate!()
+        .arg(
+            Arg::with_name("config_dir")
+                .long("config-dir")
+                .takes_value(true)
+                .value_name("PATH")
+                .help("Configuration file directory"),
+        )
+        .arg(
+            Arg::with_name("history_accounts")
+                .long("history-accounts")
+                .takes_value(true)
+                .value_name("NUMBER")
+                .default_value("5")
+                .validator(validate_usize)
+                .help("Number of previously used accounts to save in the history"),
+        )
+        .get_matches();
+    let config_dir = matches
+        .value_of_os("config_dir")
+        .map(Into::into)
+        .unwrap_or_else(|| home_dir().unwrap().join(".config/maws"));
+    let history_accounts = matches
+        .value_of("history_accounts")
+        .unwrap()
+        .parse()
+        .unwrap();
+
+    let select = AccountSelect::new(
+        config_dir.join("roles.json"),
+        config_dir.join("menu.toml"),
+        history_accounts,
+    )?;
+    let account = select.select_account()?;
+    eprintln!("Account: {}", account);
+    let role = select.select_role(account)?;
+    eprintln!("Role: {}", role.role);
 
     let mut child = std::process::Command::new("maws")
         .args(["-b", "-r", &role.arn])
@@ -28,7 +61,14 @@ fn main() -> Result<()> {
     std::process::exit(child.wait()?.code().unwrap_or(-1));
 }
 
-struct Config {
+fn validate_usize(s: String) -> std::result::Result<(), String> {
+    match s.parse::<usize>() {
+        Ok(_) => Ok(()),
+        Err(_) => Err("must be a non-negative integral number".into()),
+    }
+}
+
+struct AccountSelect {
     accounts: AccountsMap,
     history: History,
 }
@@ -42,15 +82,19 @@ struct Role {
 
 type AccountsMap = BTreeMap<String, Vec<Role>>;
 
-impl Config {
-    fn new(roles_path: impl AsRef<Path>, history_path: impl Into<PathBuf>) -> Result<Config> {
+impl AccountSelect {
+    fn new(
+        roles_path: impl AsRef<Path>,
+        history_path: impl Into<PathBuf>,
+        max_last_accounts: usize,
+    ) -> Result<AccountSelect> {
         let roles_file = File::open(&roles_path).with_context(|| format!(
             "Cannot open configuration file at {}, please see README.md\nhttps://github.com/smarnach/maws-menu",
             roles_path.as_ref().display(),
         ))?;
         Ok(Self {
             accounts: serde_json::from_reader(roles_file)?,
-            history: History::new(history_path)?,
+            history: History::new(history_path, max_last_accounts)?,
         })
     }
 
@@ -78,8 +122,7 @@ impl Config {
             .unwrap_or_default();
         let selected = select(menu_items, default_index)?;
         let account = self.accounts.keys().nth(selected).unwrap();
-        eprintln!("Account: {}", account);
-        self.history.use_account(account, 5);
+        self.history.use_account(account);
         Ok(account)
     }
 
@@ -95,8 +138,8 @@ impl Config {
             .and_then(|x| account_roles.iter().position(|y| x == y.role))
             .unwrap_or_default();
         let role = &account_roles[select(menu_items, default_index)?];
-        eprintln!("Role: {}", role.role);
         self.history.use_role(account, &role.role);
+        self.history.write()?;
         Ok(role)
     }
 }

@@ -18,11 +18,12 @@ struct HistoryConfig {
 #[derive(Debug)]
 pub struct History {
     config: RefCell<HistoryConfig>,
+    max_last_accounts: usize,
     path: PathBuf,
 }
 
 impl History {
-    pub fn new(path: impl Into<PathBuf>) -> Result<Self> {
+    pub fn new(path: impl Into<PathBuf>, max_last_accounts: usize) -> Result<Self> {
         let path = path.into();
         let mut config: HistoryConfig =
             toml::from_slice(&std::fs::read(&path).unwrap_or_default())?;
@@ -32,6 +33,7 @@ impl History {
         }
         Ok(Self {
             config: RefCell::new(config),
+            max_last_accounts,
             path,
         })
     }
@@ -52,12 +54,12 @@ impl History {
             .map(ToOwned::to_owned)
     }
 
-    pub fn use_account(&self, account: &str, max_accounts: usize) {
+    pub fn use_account(&self, account: &str) {
         let last_accounts = &mut self.config.borrow_mut().last_accounts;
         last_accounts.insert(0, account.to_owned());
         let mut seen = HashSet::new();
         last_accounts.retain(|x| seen.insert(x.to_owned()));
-        last_accounts.truncate(max_accounts);
+        last_accounts.truncate(self.max_last_accounts);
     }
 
     pub fn default_role(&self, account: &str) -> Option<String> {
