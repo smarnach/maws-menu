@@ -131,7 +131,7 @@ impl Menu {
                 Key::Down => selected = (selected + 1).min(self.items.len() - 1),
                 Key::Home => selected = 0,
                 Key::End => selected = self.items.len() - 1,
-                Key::Esc | Key::Char('q') => return Ok(None),
+                Key::Esc | Key::Char('q') | Key::Ctrl('c') => return Ok(None),
                 Key::Char('\n') => return Ok(Some(selected)),
                 Key::Char(c) => {
                     for i in 0..self.items.len() {
