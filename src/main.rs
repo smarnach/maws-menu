@@ -122,7 +122,6 @@ impl AccountSelect {
             .unwrap_or_default();
         let selected = select(menu_items, default_index)?;
         let account = self.accounts.keys().nth(selected).unwrap();
-        self.history.use_account(account);
         Ok(account)
     }
 
@@ -138,8 +137,7 @@ impl AccountSelect {
             .and_then(|x| account_roles.iter().position(|y| x == y.role))
             .unwrap_or_default();
         let role = &account_roles[select(menu_items, default_index)?];
-        self.history.use_role(account, &role.role);
-        self.history.write()?;
+        self.history.update(account, &role.role)?;
         Ok(role)
     }
 }

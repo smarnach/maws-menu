@@ -54,14 +54,6 @@ impl History {
             .map(ToOwned::to_owned)
     }
 
-    pub fn use_account(&self, account: &str) {
-        let last_accounts = &mut self.config.borrow_mut().last_accounts;
-        last_accounts.insert(0, account.to_owned());
-        let mut seen = HashSet::new();
-        last_accounts.retain(|x| seen.insert(x.to_owned()));
-        last_accounts.truncate(self.max_last_accounts);
-    }
-
     pub fn default_role(&self, account: &str) -> Option<String> {
         self.config
             .borrow()
@@ -70,15 +62,14 @@ impl History {
             .map(ToOwned::to_owned)
     }
 
-    pub fn use_role(&self, account: &str, role: &str) {
-        self.config
-            .borrow_mut()
-            .roles
-            .insert(account.to_owned(), role.to_owned());
-    }
-
-    pub fn write(&self) -> Result<()> {
-        let config_toml = &toml::to_vec(&self.config)?;
+    pub fn update(&self, account: &str, role: &str) -> Result<()> {
+        let mut config = self.config.borrow_mut();
+        config.last_accounts.insert(0, account.to_owned());
+        let mut seen = HashSet::new();
+        config.last_accounts.retain(|x| seen.insert(x.to_owned()));
+        config.last_accounts.truncate(self.max_last_accounts);
+        config.roles.insert(account.to_owned(), role.to_owned());
+        let config_toml = &toml::to_vec(&*config)?;
         Ok(std::fs::write(&self.path, config_toml)?)
     }
 }
