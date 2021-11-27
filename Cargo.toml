@@ -1,6 +1,6 @@
 [package]
 name = "maws-menu"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2018"
 authors = ["Sven Marnach <sven@mozilla.com>"]
 description = "Console account menu for the Mozilla AWS CLI"
