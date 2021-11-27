@@ -34,6 +34,11 @@ fn main() -> Result<()> {
                 .validator(validate_usize)
                 .help("Number of previously used accounts to save in the history"),
         )
+        .arg(
+            Arg::with_name("reuse_last_role")
+                .long("reuse-last-role")
+                .help("Automatically reuse the last role for the chosen account"),
+        )
         .get_matches();
     let config_dir = matches
         .value_of_os("config_dir")
@@ -44,6 +49,7 @@ fn main() -> Result<()> {
         .unwrap()
         .parse()
         .unwrap();
+    let reuse_last_role = matches.is_present("reuse_last_role");
 
     let select = AccountSelect::new(
         config_dir.join("roles.json"),
@@ -52,7 +58,7 @@ fn main() -> Result<()> {
     )?;
     let account = select.select_account()?;
     eprintln!("Account: {}", account);
-    let role = select.select_role(account)?;
+    let role = select.select_role(account, reuse_last_role)?;
     eprintln!("Role: {}", role.role);
 
     let mut child = std::process::Command::new("maws")
@@ -125,17 +131,23 @@ impl AccountSelect {
         Ok(account)
     }
 
-    fn select_role(&self, account: &str) -> Result<&Role> {
+    fn select_role(&self, account: &str, reuse_last_role: bool) -> Result<&Role> {
         let account_roles = self.accounts.get(account).unwrap();
+        let default_role = self.history.default_role(account);
+        let default_index = default_role
+            .as_ref()
+            .and_then(|x| account_roles.iter().position(|y| x == &y.role))
+            .unwrap_or_default();
+        if reuse_last_role {
+            if let Some(role) = default_role {
+                self.history.update(account, &role)?;
+                return Ok(&account_roles[default_index]);
+            }
+        }
         let menu_items: Vec<_> = account_roles
             .iter()
             .map(|r| (r.role.to_owned(), None))
             .collect();
-        let default_index = self
-            .history
-            .default_role(account)
-            .and_then(|x| account_roles.iter().position(|y| x == y.role))
-            .unwrap_or_default();
         let role = &account_roles[select(menu_items, default_index)?];
         self.history.update(account, &role.role)?;
         Ok(role)
