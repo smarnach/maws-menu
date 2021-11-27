@@ -62,7 +62,7 @@ fn main() -> Result<()> {
     eprintln!("Role: {}", role.role);
 
     let mut child = std::process::Command::new("maws")
-        .args(["-b", "-r", &role.arn])
+        .args(["-r", &role.arn])
         .spawn()?;
     std::process::exit(child.wait()?.code().unwrap_or(-1));
 }
